@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enartis Engineering Points Program</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f2f2f2; font-family: 'Nunito', sans-serif; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    // ─── Data ────────────────────────────────────────────────────────────────────
+    const PRODUCT_GROUPS = [
+      { id: "enzymes",       name: "Enzymes",                  category: "standard",  defaultGM: 0.45 },
+      { id: "yeast",         name: "Yeast",                    category: "standard",  defaultGM: 0.45 },
+      { id: "nutrients",     name: "Nutrients",                category: "standard",  defaultGM: 0.45 },
+      { id: "yeast_deriv",   name: "Yeast Derivatives",        category: "standard",  defaultGM: 0.45 },
+      { id: "fining",        name: "Fining Agents",            category: "standard",  defaultGM: 0.45 },
+      { id: "mlf",           name: "Malolactic Fermentation",  category: "standard",  defaultGM: 0.45 },
+      { id: "oak",           name: "Oak Alternatives",         category: "standard",  defaultGM: 0.45 },
+      { id: "tannins",       name: "Tannins",                  category: "standard",  defaultGM: 0.45 },
+      { id: "stabilization", name: "Stabilization",            category: "standard",  defaultGM: 0.45 },
+      { id: "so2",           name: "SO\u2082 Products",        category: "commodity", defaultGM: 0.30 },
+      { id: "tartaric",      name: "Tartaric Acid",            category: "commodity", defaultGM: 0.30 },
+      { id: "citric",        name: "Citric Acid",              category: "commodity", defaultGM: 0.30 },
+      { id: "bentonite",     name: "Bentonite",                category: "commodity", defaultGM: 0.30 },
+    ];
+
+    // ─── Equipment List ───────────────────────────────────────────────────────────
+    // No prices or margins here — all entered manually:
+    //   • Retail prices: Deal Setup → Equipment card
+    //   • Equipment costs (landed): Internal → Total Deal GM card
+    const EQUIPMENT_LIST = [
+      { id: "cm1000",   name: "CellarMate 1000 Plus Propagator", vendor: "Parsec" },
+      { id: "cm3000",   name: "CellarMate 3000 Plus Propagator", vendor: "Parsec" },
+      { id: "muse4",    name: "MU.SE 4.0",                       vendor: "Parsec" },
+      { id: "evo2ferm", name: "EVO2FERM",                        vendor: "Parsec" },
+      { id: "dts100",   name: "DT Flotation Pump \u2013 100hL",  vendor: "Della Toffola" },
+      { id: "dts300",   name: "DT Flotation Pump \u2013 300hL",  vendor: "Della Toffola" },
+      { id: "dts500",   name: "DT Flotation Pump \u2013 500hL",  vendor: "Della Toffola" },
+      { id: "mox1",     name: "Dainese MOx 1 Dose",              vendor: "Dainese" },
+      { id: "mox2",     name: "Dainese MOx 2 Dose",              vendor: "Dainese" },
+      { id: "mox5",     name: "Dainese MOx 5 Dose",              vendor: "Dainese" },
+      { id: "tc",       name: "Tartarcheck Plus",                 vendor: "Exacta" },
+      { id: "wp1100",   name: "Winegrid WP1100",                  vendor: "Winegrid" },
+      { id: "bp1011",   name: "Winegrid BarrelPlus BP1011",       vendor: "Winegrid" },
+      { id: "smartbox", name: "Winegrid SmartBox 2.0",            vendor: "Winegrid" },
+    ];
+
+    const POINTS_RATES = { standard: 0.5, commodity: 0.2 };
+
+    // ─── Default multiples: min 1.2, target 1.5 ──────────────────────────────────
+    const SETTINGS_DEFAULTS = { minMultiple: 1.2, targetMultiple: 1.5, useTaxRate: 0.0925, escalationThreshold: 30000 };
+
+    const C = {
+      blue: "#0076BD", blueDark: "#005a91", blueLight: "#e8f4fb",
+      red: "#D10019", teal: "#4EBFB3",
+      black: "#1a1a1a", g90: "#2d2d2d", g70: "#555", g50: "#888", g30: "#b0b0b0", g15: "#d9d9d9", g05: "#f2f2f2", white: "#fff",
+      ok: "#2a8a42", okBg: "#edf7ef", warn: "#c47a00", warnBg: "#fef8eb", fail: "#c42020", failBg: "#fef0f0"
+    };
+
+    const fmt  = n => (n == null || isNaN(n)) ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+    const fmtN = n => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+    const fmtPct = n => (n * 100).toFixed(1) + "%";
+    const uid  = () => Math.random().toString(36).slice(2, 9);
+
+    // ─── Shared style objects ─────────────────────────────────────────────────────
+    const F = "'Nunito', sans-serif";
+    const inp = { background: C.white, border: `1px solid ${C.g15}`, color: C.black, padding: "8px 12px", borderRadius: 4, fontSize: 13, fontFamily: F, width: "100%", boxSizing: "border-box", outline: "none" };
+    const sel = { ...inp, appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'><polyline points='6 9 12 15 18 9'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center", paddingRight: 30 };
+    const crd  = { background: C.white, border: `1px solid ${C.g15}`, borderRadius: 6, padding: 20, marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
+    const lbl  = { fontSize: 10, color: C.g50, fontFamily: F, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: 4, display: "block" };
+    const dBtn = { background: "none", border: `1px dashed ${C.g15}`, color: C.g50, padding: "6px 16px", borderRadius: 4, fontSize: 12, fontFamily: F, cursor: "pointer" };
+    const xBtn = { background: "none", border: "none", color: C.g30, cursor: "pointer", fontSize: 16, padding: 0 };
+
+    // ─── Sub-components ───────────────────────────────────────────────────────────
+    function PointsBar({ earned, target, label }) {
+      const pct = target > 0 ? Math.min(earned / target, 1) : 0;
+      const over = earned >= target;
+      return (
+        <div style={{ marginBottom: 14 }}>
+          {label && <div style={{ fontSize: 11, color: C.g50, marginBottom: 4, fontFamily: F }}>{label}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, height: 8, background: C.g05, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ width: `${pct * 100}%`, height: "100%", borderRadius: 4, background: over ? `linear-gradient(90deg, ${C.teal}, ${C.ok})` : `linear-gradient(90deg, ${C.blue}, ${C.blueDark})`, transition: "width 0.6s ease" }} />
+            </div>
+            <span style={{ fontFamily: F, fontSize: 12, fontWeight: 600, color: over ? C.ok : C.blue, minWidth: 44, textAlign: "right" }}>{(pct * 100).toFixed(0)}%</span>
+          </div>
+        </div>
+      );
+    }
+
+    function Metric({ label, value, sub, warn, big }) {
+      return (
+        <div style={{ padding: "10px 0", borderBottom: `1px solid ${C.g05}` }}>
+          <div style={{ fontSize: 10, color: C.g50, fontFamily: F, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{label}</div>
+          <div style={{ fontSize: big ? 26 : 18, fontWeight: 700, color: warn ? C.fail : C.black, fontFamily: F, marginTop: 2 }}>{value}</div>
+          {sub && <div style={{ fontSize: 11, color: C.g50, fontFamily: F, marginTop: 2 }}>{sub}</div>}
+        </div>
+      );
+    }
+
+    function Badge({ text, color }) {
+      const s = { green: { bg: C.okBg, br: "#b8dfc2", tx: C.ok }, yellow: { bg: C.warnBg, br: "#e8d5a0", tx: C.warn }, red: { bg: C.failBg, br: "#e8b0b0", tx: C.fail }, blue: { bg: C.blueLight, br: "#a8d4ef", tx: C.blue } }[color] || { bg: C.blueLight, br: "#a8d4ef", tx: C.blue };
+      return <span style={{ display: "inline-block", padding: "3px 10px", fontSize: 10, fontFamily: F, fontWeight: 700, background: s.bg, border: `1px solid ${s.br}`, color: s.tx, borderRadius: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{text}</span>;
+    }
+
+    function Sec({ text }) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 14px" }}>
+          <div style={{ width: 4, height: 20, background: C.teal, borderRadius: 2 }} />
+          <span style={{ fontSize: 13, fontFamily: F, fontWeight: 700, color: C.black, textTransform: "uppercase", letterSpacing: "0.04em" }}>{text}</span>
+        </div>
+      );
+    }
+
+    // ─── Main App ─────────────────────────────────────────────────────────────────
+    function App() {
+      const [view, setView] = useState("deal");
+      const [settings, setSettings] = useState({ ...SETTINGS_DEFAULTS });
+
+      // ── Default client: Accenti Wines ──
+      const [dealName, setDealName] = useState("Accenti Wines");
+      const [rep, setRep] = useState("James");
+      const [termYears, setTermYears] = useState(5);
+      const [isImmediate, setIsImmediate] = useState(false);
+      const [annualInvoicing, setAnnualInvoicing] = useState(false);
+      const [targetEndPrice, setTargetEndPrice] = useState(1);
+      const [dealNotes, setDealNotes] = useState("");
+
+      // Equipment lines — retailPrice entered manually on Deal Setup
+      const [equipmentLines, setEquipmentLines] = useState([
+        { id: uid(), equipId: "cm1000", qty: 1, customName: "", retailPrice: 0 }
+      ]);
+
+      const [spendLines, setSpendLines] = useState([
+        { id: uid(), groupId: "enzymes",       annualSpend: 3300,  gmOverride: null },
+        { id: uid(), groupId: "so2",           annualSpend: 6000,  gmOverride: null },
+        { id: uid(), groupId: "tannins",       annualSpend: 10000, gmOverride: null },
+        { id: uid(), groupId: "stabilization", annualSpend: 15000, gmOverride: null },
+        { id: uid(), groupId: "yeast",         annualSpend: 10000, gmOverride: null },
+        { id: uid(), groupId: "fining",        annualSpend: 9000,  gmOverride: null },
+        { id: uid(), groupId: "nutrients",     annualSpend: 5000,  gmOverride: null },
+      ]);
+
+      const [annualData, setAnnualData] = useState(
+        Array.from({ length: 10 }, (_, i) => ({ year: i + 1, actualGS: null, actualGM: null }))
+      );
+
+      // ── Total Deal GM state ──
+      // equipCosts: { [lineId]: costPerUnit } — entered manually on Internal tab
+      const [equipCosts, setEquipCosts] = useState({});
+      const [productCostPctOverride, setProductCostPctOverride] = useState(null);
+
+      const calcs = useMemo(() => {
+        // Equipment retail total — all prices entered manually
+        const eT = equipmentLines.reduce((s, l) => s + (l.retailPrice || 0) * l.qty, 0);
+
+        // Equipment landed cost — from Total Deal GM card inputs, with use tax
+        const eL = equipmentLines.reduce((s, l) => {
+          const cost = equipCosts[l.id] || 0;
+          return s + cost * (1 + settings.useTaxRate) * l.qty;
+        }, 0);
+
+        let aS = 0, aP = 0, aM = 0;
+        const sd = spendLines.map(l => {
+          const g = PRODUCT_GROUPS.find(x => x.id === l.groupId);
+          if (!g || !l.annualSpend) return { ...l, points: 0, margin: 0 };
+          const r = POINTS_RATES[g.category];
+          const gm = (l.gmOverride != null && l.gmOverride !== "") ? parseFloat(l.gmOverride) / 100 : g.defaultGM;
+          const pts = l.annualSpend * r;
+          const m   = l.annualSpend * gm;
+          aS += l.annualSpend; aP += pts; aM += m;
+          return { ...l, points: pts, margin: m, gm, rate: r };
+        });
+
+        const t   = isImmediate ? 1 : termYears;
+        const tS  = aS * t, tP = aP * t, tM = aM * t;
+        const pEP = Math.max(targetEndPrice, eT - tP);
+        const pN  = Math.max(0, eT - targetEndPrice);
+        const pSh = Math.max(0, pN - tP);
+        const oT  = tP >= pN;
+        const mM  = eL > 0 ? tM / eL : 0;
+        const pMin = mM >= settings.minMultiple;
+        const pTgt = mM >= settings.targetMultiple;
+        const bGM  = aS > 0 ? aM / aS : 0;
+        const aPT  = t > 0 ? pN / t : 0;
+
+        // Total Deal GM
+        const totalRevenue     = eT + tS;
+        const totalEquipCost   = eL;
+        const prodCostPct      = productCostPctOverride != null ? productCostPctOverride / 100 : (1 - bGM);
+        const totalProductCost = tS * prodCostPct;
+        const totalDealGM      = totalRevenue - totalEquipCost - totalProductCost;
+        const totalDealGMPct   = totalRevenue > 0 ? totalDealGM / totalRevenue : 0;
+
+        let cGS = 0, cGM = 0, cPts = 0;
+        const ar = annualData.slice(0, t).map((yr, i) => {
+          const gs = yr.actualGS || 0, gm = yr.actualGM || 0;
+          cGS += gs; cGM += gm;
+          const br  = aS > 0 ? aP / aS : 0.4;
+          const yP  = gs * br; cPts += yP;
+          const prt = aPT * (i + 1);
+          return { ...yr, cumGS: cGS, cumGM: cGM, yrPoints: yP, cumPoints: cPts, proRataTarget: prt, onTrack: cPts >= prt * 0.9 };
+        });
+
+        return {
+          equipTotal: eT, equipLanded: eL,
+          annualSpend: aS, annualPoints: aP, annualMargin: aM,
+          totalSpend: tS, totalPoints: tP, totalMargin: tM, term: t,
+          spendDetail: sd, projectedEndPrice: pEP, pointsNeeded: pN,
+          pointsShortfall: pSh, onTrack: oT, marginMultiple: mM,
+          passesMin: pMin, passesTarget: pTgt, blendedGM: bGM,
+          annualPointsTarget: aPT, annualReview: ar,
+          totalRevenue, totalEquipCost, totalProductCost, totalDealGM, totalDealGMPct, prodCostPct,
+        };
+      }, [equipmentLines, spendLines, termYears, isImmediate, targetEndPrice, settings, annualData, equipCosts, productCostPctOverride]);
+
+      const addEq = () => setEquipmentLines(p => [...p, { id: uid(), equipId: "", qty: 1, customName: "", retailPrice: 0 }]);
+      const rmEq  = id => setEquipmentLines(p => p.filter(l => l.id !== id));
+      const upEq  = (id, f, v) => setEquipmentLines(p => p.map(l => l.id === id ? { ...l, [f]: v } : l));
+      const addSp = () => setSpendLines(p => [...p, { id: uid(), groupId: "", annualSpend: 0, gmOverride: null }]);
+      const rmSp  = id => setSpendLines(p => p.filter(l => l.id !== id));
+      const upSp  = (id, f, v) => setSpendLines(p => p.map(l => l.id === id ? { ...l, [f]: v } : l));
+      const upAn  = (i, f, v) => setAnnualData(p => p.map((d, j) => j === i ? { ...d, [f]: v === "" ? null : Number(v) } : d));
+
+      const nb = v => ({ padding: "8px 16px", fontSize: 11, fontFamily: F, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", border: "none", borderBottom: view === v ? `3px solid ${C.blue}` : "3px solid transparent", background: "transparent", color: view === v ? C.blue : C.g50, cursor: "pointer", transition: "all 0.2s" });
+
+      return (
+        <div style={{ minHeight: "100vh", background: C.g05, color: C.black, fontFamily: F }}>
+
+          {/* ── Header ── */}
+          <div style={{ background: C.white, borderBottom: `1px solid ${C.g15}`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0" }}>
+
+              {/*
+               * ── LOGO SWAP ────────────────────────────────────────────
+               * To use the real Enartis logo PNG, replace the <div> text
+               * wordmark block below with:
+               *
+               *   <img src="enartis-logo.png" alt="Enartis" style={{height:32}} />
+               *
+               * Place enartis-logo.png in the same folder as this index.html
+               * and it will load automatically when you push to GitHub.
+               * ─────────────────────────────────────────────────────────
+               */}
+              <div style={{ display: "flex", alignItems: "baseline" }}>
+                <span style={{ fontSize: 22, fontWeight: 900, fontFamily: F, color: C.blue, letterSpacing: "-0.02em" }}>en</span>
+                <span style={{ fontSize: 22, fontWeight: 900, fontFamily: F, color: C.red,  letterSpacing: "-0.02em" }}>a</span>
+                <span style={{ fontSize: 22, fontWeight: 900, fontFamily: F, color: C.blue, letterSpacing: "-0.02em" }}>rtis</span>
+              </div>
+
+              <div style={{ width: 1, height: 24, background: C.g15 }} />
+              <div>
+                <div style={{ fontSize: 9, color: C.g50, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em" }}>Engineering</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.black, textTransform: "uppercase", letterSpacing: "0.08em" }}>POINTS</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex" }}>
+              <button style={nb("deal")}     onClick={() => setView("deal")}>Deal Setup</button>
+              <button style={nb("customer")} onClick={() => setView("customer")}>Customer View</button>
+              <button style={nb("internal")} onClick={() => setView("internal")}>Internal</button>
+              <button style={nb("annual")}   onClick={() => setView("annual")}>Annual Review</button>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 20px" }}>
+
+            {/* ════════ DEAL SETUP ════════ */}
+            {view === "deal" && (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+                  {/* Deal Info */}
+                  <div style={crd}>
+                    <Sec text="Deal Information" />
+                    <div style={{ display: "grid", gap: 12 }}>
+                      <div><label style={lbl}>Client</label><input style={inp} value={dealName} onChange={e => setDealName(e.target.value)} /></div>
+                      <div><label style={lbl}>Rep</label><input style={inp} value={rep} onChange={e => setRep(e.target.value)} /></div>
+                      <div style={{ display: "flex", gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={lbl}>Term (years)</label>
+                          <input style={inp} type="number" min={1} max={10} value={termYears} onChange={e => setTermYears(Number(e.target.value) || 1)} disabled={isImmediate} />
+                        </div>
+                        <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontFamily: F, color: C.g70, cursor: "pointer" }}>
+                            <input type="checkbox" checked={isImmediate} onChange={e => setIsImmediate(e.target.checked)} style={{ accentColor: C.blue }} />
+                            Immediate
+                          </label>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={lbl}>Target Equipment Price at End</label>
+                        <input style={inp} type="number" min={0} value={targetEndPrice} onChange={e => setTargetEndPrice(Number(e.target.value) || 0)} />
+                        <div style={{ fontSize: 10, color: C.g50, marginTop: 3 }}>$1 = full transfer. Higher = partial discount goal.</div>
+                      </div>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontFamily: F, color: C.g70, cursor: "pointer" }}>
+                        <input type="checkbox" checked={annualInvoicing} onChange={e => setAnnualInvoicing(e.target.checked)} style={{ accentColor: C.blue }} />
+                        Annual equipment invoicing
+                      </label>
+                      <div><label style={lbl}>Notes</label><textarea style={{ ...inp, height: 56, resize: "vertical" }} value={dealNotes} onChange={e => setDealNotes(e.target.value)} /></div>
+                    </div>
+                  </div>
+
+                  {/* Equipment — retail price entered manually */}
+                  <div style={crd}>
+                    <Sec text="Equipment" />
+                    <div style={{ fontSize: 10, color: C.g50, marginBottom: 10 }}>Enter retail price for each unit. Equipment costs (landed) go on Internal → Total Deal GM.</div>
+                    {equipmentLines.map(l => {
+                      const ic = l.equipId === "custom";
+                      return (
+                        <div key={l.id} style={{ marginBottom: 10 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 90px 70px 28px", gap: 6, alignItems: "center" }}>
+                            <select style={sel} value={l.equipId} onChange={e => upEq(l.id, "equipId", e.target.value)}>
+                              <option value="">Select equipment...</option>
+                              {EQUIPMENT_LIST.map(eq => <option key={eq.id} value={eq.id}>{eq.name}</option>)}
+                              <option value="custom">✎ Custom</option>
+                            </select>
+                            <input style={{ ...inp, textAlign: "right" }} type="number" min={0} step={500} value={l.retailPrice || ""} onChange={e => upEq(l.id, "retailPrice", Number(e.target.value) || 0)} placeholder="Price $" />
+                            <input style={{ ...inp, textAlign: "center" }} type="number" min={1} value={l.qty} onChange={e => upEq(l.id, "qty", Number(e.target.value) || 1)} placeholder="Qty" />
+                            {equipmentLines.length > 1 && <button onClick={() => rmEq(l.id)} style={xBtn}>×</button>}
+                          </div>
+                          {ic && <div style={{ marginTop: 8, paddingLeft: 4 }}>
+                            <label style={{ ...lbl, fontSize: 10 }}>Custom Name</label>
+                            <input style={inp} value={l.customName} onChange={e => upEq(l.id, "customName", e.target.value)} placeholder="e.g. 20× Winegrid + SmartBox" />
+                          </div>}
+                        </div>
+                      );
+                    })}
+                    <button onClick={addEq} style={{ ...dBtn, width: "100%", marginTop: 4 }}>+ Add equipment</button>
+                    <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.g05}` }}>
+                      <Metric label="Equipment Retail Total" value={fmt(calcs.equipTotal)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Annual Product Spend */}
+                <div style={crd}>
+                  <Sec text="Annual Product Spend" />
+                  <div style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 0.8fr 0.8fr 28px", gap: "6px 10px", alignItems: "center", fontSize: 10, color: C.g50, marginBottom: 8, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.06em" }}>
+                    <span>Product Group</span><span>Annual Spend</span><span>Category</span><span style={{ textAlign: "right" }}>Points/yr</span><span></span>
+                  </div>
+                  {spendLines.map(l => {
+                    const g = PRODUCT_GROUPS.find(x => x.id === l.groupId);
+                    const d = calcs.spendDetail.find(x => x.id === l.id);
+                    return (
+                      <div key={l.id} style={{ display: "grid", gridTemplateColumns: "2.5fr 1fr 0.8fr 0.8fr 28px", gap: "6px 10px", alignItems: "center", marginBottom: 6 }}>
+                        <select style={sel} value={l.groupId} onChange={e => upSp(l.id, "groupId", e.target.value)}>
+                          <option value="">Select product...</option>
+                          {PRODUCT_GROUPS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                        <input style={{ ...inp, textAlign: "right" }} type="number" min={0} step={500} value={l.annualSpend || ""} onChange={e => upSp(l.id, "annualSpend", Number(e.target.value) || 0)} placeholder="$0" />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: g?.category === "commodity" ? C.warn : C.blue, textAlign: "center" }}>{g ? (g.category === "commodity" ? "0.2×" : "0.5×") : "—"}</span>
+                        <span style={{ fontSize: 12, color: C.g70, textAlign: "right", fontWeight: 600 }}>{d?.points ? fmtN(d.points) : "—"}</span>
+                        {spendLines.length > 1 && <button onClick={() => rmSp(l.id)} style={xBtn}>×</button>}
+                      </div>
+                    );
+                  })}
+                  <button onClick={addSp} style={{ ...dBtn, marginTop: 8 }}>+ Add product line</button>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.g05}` }}>
+                    <Metric label="Annual Spend" value={fmt(calcs.annualSpend)} />
+                    <Metric label="Annual Points" value={fmtN(calcs.annualPoints)} sub={`${fmtN(calcs.totalPoints)} over ${calcs.term} yr${calcs.term > 1 ? "s" : ""}`} />
+                    <Metric label="Projected End Price" value={fmt(calcs.projectedEndPrice)} sub={calcs.onTrack ? "✓ On track" : `${fmtN(calcs.pointsShortfall)} pts short`} warn={!calcs.onTrack} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ════════ CUSTOMER VIEW ════════ */}
+            {view === "customer" && (
+              <div>
+                <div style={{ textAlign: "center", marginBottom: 32 }}>
+                  <div style={{ fontSize: 11, color: C.g50, textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}>Enartis Engineering Points Program</div>
+                  <h2 style={{ fontSize: 26, fontWeight: 800, margin: "8px 0 4px", color: C.black }}>{dealName}</h2>
+                  <div style={{ fontSize: 13, color: C.g70 }}>{isImmediate ? "Immediate points application" : `${termYears}-year agreement`}{annualInvoicing && " · Annual invoicing"}</div>
+                </div>
+                <div style={crd}>
+                  <Sec text="Your Points Progress" />
+                  <PointsBar earned={calcs.totalPoints} target={calcs.pointsNeeded} label={`${fmtN(calcs.totalPoints)} of ${fmtN(calcs.pointsNeeded)} points needed`} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginTop: 12 }}>
+                    <Metric label="Equipment Retail" value={fmt(calcs.equipTotal)} big />
+                    <Metric label="Points Earned" value={fmtN(calcs.totalPoints)} big />
+                    <Metric label="Your Projected Price" value={fmt(calcs.projectedEndPrice)} sub={calcs.onTrack ? "✓ Target achieved" : `Need ${fmtN(calcs.pointsShortfall)} more`} big warn={!calcs.onTrack} />
+                  </div>
+                </div>
+                <div style={crd}>
+                  <Sec text="How Points Work" />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ padding: 16, background: C.blueLight, borderRadius: 6, border: "1px solid #a8d4ef" }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: C.blue }}>0.5 pts</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.g70, marginTop: 4 }}>per $1 — Standard Products</div>
+                      <div style={{ fontSize: 11, color: C.g50, marginTop: 8, lineHeight: 1.5 }}>Enzymes, Yeast, Nutrients, Tannins, Fining, Oak, MLF, Stabilization, Yeast Derivatives</div>
+                    </div>
+                    <div style={{ padding: 16, background: C.warnBg, borderRadius: 6, border: "1px solid #e8d5a0" }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: C.warn }}>0.2 pts</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.g70, marginTop: 4 }}>per $1 — Commodity Products</div>
+                      <div style={{ fontSize: 11, color: C.g50, marginTop: 8, lineHeight: 1.5 }}>SO₂, Tartaric Acid, Citric Acid, Bentonite</div>
+                    </div>
+                  </div>
+                </div>
+                <div style={crd}>
+                  <Sec text="Annual Spend Plan" />
+                  {calcs.spendDetail.filter(d => d.annualSpend > 0).map(d => {
+                    const g = PRODUCT_GROUPS.find(x => x.id === d.groupId);
+                    return (
+                      <div key={d.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.g05}` }}>
+                        <span style={{ fontSize: 14 }}>{g?.name}</span>
+                        <div>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{fmt(d.annualSpend)}</span>
+                          <span style={{ fontSize: 11, color: C.g50, marginLeft: 12 }}>{fmtN(d.points)} pts/yr</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderTop: `2px solid ${C.g15}`, marginTop: 8 }}>
+                    <span style={{ fontWeight: 800 }}>Total Annual</span>
+                    <div>
+                      <span style={{ fontSize: 15, fontWeight: 700 }}>{fmt(calcs.annualSpend)}</span>
+                      <span style={{ fontSize: 13, color: C.blue, fontWeight: 600, marginLeft: 12 }}>{fmtN(calcs.annualPoints)} pts/yr</span>
+                    </div>
+                  </div>
+                </div>
+                {!isImmediate && (
+                  <div style={crd}>
+                    <Sec text={annualInvoicing ? "Annual Equipment Invoicing" : "Points Timeline"} />
+                    {Array.from({ length: calcs.term }, (_, i) => {
+                      const cp  = calcs.annualPoints * (i + 1);
+                      const rem = Math.max(targetEndPrice, calcs.equipTotal - cp);
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 1fr 100px 100px", gap: 12, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.g05}` }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: C.g50 }}>Year {i + 1}</span>
+                          <PointsBar earned={cp} target={calcs.pointsNeeded} />
+                          <span style={{ fontSize: 12, textAlign: "right" }}>{fmtN(cp)} pts</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, textAlign: "right", color: rem <= targetEndPrice ? C.ok : C.g70 }}>{fmt(rem)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ ...crd, background: C.okBg, borderColor: "#b8dfc2" }}>
+                  <Sec text="At the End of the Agreement" />
+                  <p style={{ fontSize: 14, lineHeight: 1.7, margin: 0, color: C.g70 }}>
+                    {calcs.onTrack
+                      ? `Based on your projected spend, you'll earn ${fmtN(calcs.totalPoints)} points — enough to bring the equipment price to ${fmt(targetEndPrice)}. ${targetEndPrice <= 1 ? "The equipment transfers to you." : "You pay the remaining balance."}`
+                      : `If your spend comes in as projected, you'll earn ${fmtN(calcs.totalPoints)} points. The remaining equipment balance would be ${fmt(calcs.projectedEndPrice)}. You can increase spend, extend the term, or pay the balance.`}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ════════ INTERNAL ════════ */}
+            {view === "internal" && (
+              <div>
+                <details style={{ marginBottom: 16 }}>
+                  <summary style={{ fontSize: 12, color: C.g50, cursor: "pointer", fontWeight: 700 }}>Settings (Finance only)</summary>
+                  <div style={{ ...crd, marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
+                    {[
+                      { k: "minMultiple",        l: "Min Multiple",    s: 0.1 },
+                      { k: "targetMultiple",      l: "Target Multiple", s: 0.1 },
+                      { k: "useTaxRate",          l: "Use Tax Rate",    s: 0.005 },
+                      { k: "escalationThreshold", l: "Escalation ($)",  s: 5000 },
+                    ].map(x => (
+                      <div key={x.k}>
+                        <label style={lbl}>{x.l}</label>
+                        <input style={inp} type="number" step={x.s} value={settings[x.k]} onChange={e => setSettings(p => ({ ...p, [x.k]: Number(e.target.value) }))} />
+                      </div>
+                    ))}
+                  </div>
+                </details>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+                  {/* Deal Economics */}
+                  <div style={crd}>
+                    <Sec text="Deal Economics" />
+                    <Metric label="Equipment Retail Total" value={fmt(calcs.equipTotal)} />
+                    <Metric label="Total Contract Margin (products)" value={fmt(calcs.totalMargin)} />
+                    <Metric label="Margin Multiple" value={calcs.marginMultiple.toFixed(2) + "x"} sub={`Min ${settings.minMultiple}x / Target ${settings.targetMultiple}x`} warn={!calcs.passesMin} big />
+                    <Metric label="Blended GM%" value={fmtPct(calcs.blendedGM)} />
+                    <div style={{ marginTop: 12 }}>
+                      {calcs.passesTarget ? <Badge text="Strong Pass" color="green" /> : calcs.passesMin ? <Badge text="Pass — Review" color="yellow" /> : <Badge text="Does Not Pass" color="red" />}
+                    </div>
+                  </div>
+
+                  {/* ── Total Deal GM card (replaces Risk Assessment) ── */}
+                  <div style={crd}>
+                    <Sec text="Total Deal GM" />
+                    <div style={{ fontSize: 11, color: C.g50, marginBottom: 14 }}>
+                      Enter your equipment costs below. Product costs auto-calculate from blended GM (or override the cost %).
+                    </div>
+
+                    {/* Equipment cost inputs */}
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, color: C.g50, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Equipment Costs (Landed, per unit)</div>
+                      {equipmentLines.map(l => {
+                        const eq   = EQUIPMENT_LIST.find(e => e.id === l.equipId);
+                        const name = l.equipId === "custom" ? (l.customName || "Custom") : (eq?.name || "—");
+                        return (
+                          <div key={l.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, color: C.g70 }}>{name}{l.qty > 1 ? ` ×${l.qty}` : ""}</span>
+                            <input
+                              style={{ ...inp, textAlign: "right", padding: "6px 8px" }}
+                              type="number" min={0} step={500}
+                              value={equipCosts[l.id] || ""}
+                              onChange={e => setEquipCosts(p => ({ ...p, [l.id]: Number(e.target.value) || 0 }))}
+                              placeholder="Cost/unit"
+                            />
+                            <span style={{ fontSize: 11, color: C.g50 }}>
+                              {equipCosts[l.id] ? fmt(equipCosts[l.id] * l.qty) : "—"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, paddingTop: 8, borderTop: `1px solid ${C.g05}`, marginTop: 4 }}>
+                        <span style={{ color: C.g70 }}>Total equip cost (w/ use tax)</span>
+                        <span>{fmt(calcs.totalEquipCost)}</span>
+                      </div>
+                    </div>
+
+                    {/* Product cost override */}
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={lbl}>Product Cost % Override</label>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input
+                          style={{ ...inp, width: 90, textAlign: "right" }}
+                          type="number" min={0} max={100} step={1}
+                          value={productCostPctOverride ?? ""}
+                          onChange={e => setProductCostPctOverride(e.target.value === "" ? null : Number(e.target.value))}
+                          placeholder={((1 - calcs.blendedGM) * 100).toFixed(0)}
+                        />
+                        <span style={{ fontSize: 11, color: C.g50 }}>% of product revenue (blank = auto from blended GM)</span>
+                      </div>
+                    </div>
+
+                    {/* GM Summary */}
+                    <div style={{ background: C.g05, borderRadius: 6, padding: 14 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 0", fontSize: 13 }}>
+                        <span style={{ color: C.g50 }}>Equipment revenue</span>
+                        <span style={{ textAlign: "right", fontWeight: 600 }}>{fmt(calcs.equipTotal)}</span>
+                        <span style={{ color: C.g50 }}>Product revenue ({calcs.term}yr)</span>
+                        <span style={{ textAlign: "right", fontWeight: 600 }}>{fmt(calcs.totalSpend)}</span>
+                        <span style={{ color: C.g50, paddingTop: 6, borderTop: `1px solid ${C.g15}`, marginTop: 4 }}>Total revenue</span>
+                        <span style={{ textAlign: "right", fontWeight: 700, paddingTop: 6, borderTop: `1px solid ${C.g15}`, marginTop: 4 }}>{fmt(calcs.totalRevenue)}</span>
+                        <span style={{ color: C.g50 }}>Equipment cost</span>
+                        <span style={{ textAlign: "right", color: C.fail }}>{fmt(calcs.totalEquipCost)}</span>
+                        <span style={{ color: C.g50 }}>Product cost</span>
+                        <span style={{ textAlign: "right", color: C.fail }}>{fmt(calcs.totalProductCost)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: `2px solid ${C.g15}` }}>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>Total Deal GM</span>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 22, fontWeight: 800, color: calcs.totalDealGM >= 0 ? C.ok : C.fail }}>{fmt(calcs.totalDealGM)}</div>
+                          <div style={{ fontSize: 12, color: C.g50 }}>{fmtPct(calcs.totalDealGMPct)} of total revenue</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Product Margin Detail */}
+                <div style={crd}>
+                  <Sec text="Product Margin Detail" />
+                  <div style={{ fontSize: 11, color: C.g50, marginBottom: 10 }}>Edit GM% to reflect discounts or non-standard pricing</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 0.9fr 1fr 1fr 0.7fr", gap: "4px 12px", fontSize: 10, color: C.g50, marginBottom: 8, textTransform: "uppercase", fontWeight: 600 }}>
+                    <span>Product</span><span style={{ textAlign: "right" }}>Spend</span><span style={{ textAlign: "center" }}>GM% ✎</span><span style={{ textAlign: "right" }}>Margin</span><span style={{ textAlign: "right" }}>Points</span><span style={{ textAlign: "center" }}>Rate</span>
+                  </div>
+                  {calcs.spendDetail.filter(d => d.annualSpend > 0).map(d => {
+                    const g  = PRODUCT_GROUPS.find(x => x.id === d.groupId);
+                    const sl = spendLines.find(x => x.id === d.id);
+                    return (
+                      <div key={d.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 0.9fr 1fr 1fr 0.7fr", gap: "4px 12px", padding: "6px 0", borderBottom: `1px solid ${C.g05}`, fontSize: 13, alignItems: "center" }}>
+                        <span>{g?.name}</span>
+                        <span style={{ textAlign: "right" }}>{fmt(d.annualSpend)}</span>
+                        <input style={{ ...inp, textAlign: "center", padding: "4px 6px", fontSize: 12 }} type="number" min={0} max={100} step={1} value={sl?.gmOverride != null && sl?.gmOverride !== "" ? sl.gmOverride : ""} onChange={e => upSp(d.id, "gmOverride", e.target.value === "" ? null : e.target.value)} placeholder={g ? (g.defaultGM * 100).toFixed(0) : "—"} />
+                        <span style={{ textAlign: "right" }}>{fmt(d.margin)}</span>
+                        <span style={{ textAlign: "right" }}>{fmtN(d.points)}</span>
+                        <span style={{ textAlign: "center", fontWeight: 700, color: d.rate === 0.5 ? C.blue : C.warn }}>{d.rate}×</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Points Economics */}
+                <div style={{ ...crd, background: C.blueLight, borderColor: "#a8d4ef" }}>
+                  <Sec text="Points Economics" />
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: C.g70, margin: "0 0 8px" }}>
+                    At current rates, <strong style={{ color: C.black }}>{fmt(calcs.annualSpend)}/yr</strong> generates <strong style={{ color: C.black }}>{fmtN(calcs.annualPoints)} pts/yr</strong> and <strong style={{ color: C.black }}>{fmt(calcs.annualMargin)}/yr margin</strong>. Over {calcs.term} yr{calcs.term > 1 ? "s" : ""}: <strong style={{ color: C.black }}>{fmtN(calcs.totalPoints)} total points</strong>, <strong style={{ color: C.black }}>{fmt(calcs.totalMargin)} total margin</strong>.
+                  </p>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: C.g70, margin: 0 }}>
+                    Equipment retail: {fmt(calcs.equipTotal)} → End price: <strong style={{ color: calcs.onTrack ? C.ok : C.fail }}>{fmt(calcs.projectedEndPrice)}</strong>. {calcs.onTrack ? `Customer reaches target. Margin ${fmt(calcs.totalMargin)} vs ${fmt(calcs.equipLanded)} landed = ${calcs.marginMultiple.toFixed(1)}x.` : `${fmtN(calcs.pointsShortfall)} pts short. Invoice: ${fmt(calcs.projectedEndPrice)}.`}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ════════ ANNUAL REVIEW ════════ */}
+            {view === "annual" && (
+              <div>
+                <div style={{ marginBottom: 20 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 800, color: C.black, margin: "0 0 4px" }}>Annual Review — {dealName}</h2>
+                  <p style={{ fontSize: 12, color: C.g50, margin: 0 }}>Enter actual GS and GM from BI for each completed year.</p>
+                </div>
+                <div style={crd}>
+                  <div style={{ display: "grid", gridTemplateColumns: "70px 1fr 1fr 1fr 1fr 1fr 100px", gap: "4px 12px", fontSize: 10, color: C.g50, marginBottom: 8, textTransform: "uppercase", fontWeight: 600 }}>
+                    <span></span><span>Actual GS</span><span>Actual GM</span><span style={{ textAlign: "right" }}>Cum. GS</span><span style={{ textAlign: "right" }}>Cum. Pts</span><span style={{ textAlign: "right" }}>Target</span><span></span>
+                  </div>
+                  {calcs.annualReview.map((yr, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 1fr 1fr 1fr 1fr 1fr 100px", gap: "4px 12px", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.g05}` }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.g50 }}>Year {yr.year}</span>
+                      <input style={{ ...inp, textAlign: "right" }} type="number" value={yr.actualGS ?? ""} onChange={e => upAn(i, "actualGS", e.target.value)} placeholder="—" />
+                      <input style={{ ...inp, textAlign: "right" }} type="number" value={yr.actualGM ?? ""} onChange={e => upAn(i, "actualGM", e.target.value)} placeholder="—" />
+                      <span style={{ fontSize: 12, textAlign: "right", color: C.g70 }}>{yr.cumGS > 0 ? fmt(yr.cumGS) : "—"}</span>
+                      <span style={{ fontSize: 12, textAlign: "right", color: C.g70 }}>{yr.cumPoints > 0 ? fmtN(yr.cumPoints) : "—"}</span>
+                      <span style={{ fontSize: 12, textAlign: "right", color: C.g50 }}>{fmtN(yr.proRataTarget)}</span>
+                      <span>{yr.cumGS > 0 ? (yr.onTrack ? <Badge text="On Track" color="green" /> : <Badge text="Behind" color="red" />) : ""}</span>
+                    </div>
+                  ))}
+                </div>
+                {calcs.annualReview.some(r => r.actualGS > 0) && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+                    <div style={crd}><Metric label="Total Actual GS"  value={fmt(calcs.annualReview[calcs.annualReview.length - 1]?.cumGS || 0)} big /></div>
+                    <div style={crd}><Metric label="Total Actual GM"  value={fmt(calcs.annualReview[calcs.annualReview.length - 1]?.cumGM || 0)} sub="← EY audit number" big /></div>
+                    <div style={crd}><Metric label="Cumulative Points" value={fmtN(calcs.annualReview[calcs.annualReview.length - 1]?.cumPoints || 0)} sub={`of ${fmtN(calcs.pointsNeeded)} needed`} big /></div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
