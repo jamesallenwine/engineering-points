@@ -339,7 +339,7 @@
                     })}
                     <button onClick={addEq} style={{ ...dBtn, width: "100%", marginTop: 4 }}>+ Add equipment</button>
                     <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.g05}` }}>
-                      <Metric label="Equipment Retail Total" value={fmt(calcs.equipTotal)} />
+                      <Metric label="Equipment Retail Total" value={fmt(calcs.projectedEndPrice)} />
                     </div>
                   </div>
                 </div>
@@ -546,7 +546,7 @@
                     <div style={{ background: C.g05, borderRadius: 6, padding: 14 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 0", fontSize: 13 }}>
                         <span style={{ color: C.g50 }}>Equipment revenue</span>
-                        <span style={{ textAlign: "right", fontWeight: 600 }}>{fmt(calcs.equipTotal)}</span>
+                        <span style={{ textAlign: "right", fontWeight: 600 }}>{fmt(calcs.projectedEndPrice)}</span>
                         <span style={{ color: C.g50 }}>Product revenue ({calcs.term}yr)</span>
                         <span style={{ textAlign: "right", fontWeight: 600 }}>{fmt(calcs.totalSpend)}</span>
                         <span style={{ color: C.g50, paddingTop: 6, borderTop: `1px solid ${C.g15}`, marginTop: 4 }}>Total revenue</span>
